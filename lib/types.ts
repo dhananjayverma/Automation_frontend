@@ -7,7 +7,7 @@ export type Job = {
   updatedAt: string;
   completedAt?: string;
   durationMs: number;
-  result?: { userId?: string; passwordSaved?: boolean };
+  result?: { userId?: string; password?: string; passwordSaved?: boolean };
   error?: { code?: string; message?: string };
 };
 

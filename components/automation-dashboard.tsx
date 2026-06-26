@@ -188,13 +188,23 @@ export function AutomationDashboard() {
           ),
         );
         if (event.step === "captcha_manual_required") {
-          showToast("CAPTCHA needs manual confirmation in the browser.", "info");
+          showToast("CAPTCHA: solve it in the Playwright browser, then click Continue.", "info");
+        }
+        if (event.step === "captcha_waiting") {
+          showToast("Still waiting on CAPTCHA — solve in browser, then click Continue.", "info");
+        }
+        if (event.step === "otp_required" || (event.phase === "WAITING_FOR_OTP" && event.step === "waiting_for_otp")) {
+          showToast("OTP needed — enter it in this dashboard (not in the browser).", "info");
+        }
+        if (event.step === "uidai_error") {
+          showToast(event.message, "error");
         }
         if (event.step === "wrong_otp") {
           showToast(event.message, "error");
         }
         if (event.phase === "COMPLETED") {
-          showToast("Run completed successfully.", "success");
+          showToast("Run completed — credentials are ready in the console.", "success");
+          refreshJobs().catch(() => {});
           refreshMetrics().catch(() => {});
         }
         if (event.phase === "FAILED") {
@@ -212,7 +222,7 @@ export function AutomationDashboard() {
 
     connectStream().catch(() => setError("Could not load event history."));
     return () => { closed = true; cleanup?.(); };
-  }, [activeJobId, refreshMetrics, showToast]);
+  }, [activeJobId, refreshJobs, refreshMetrics, showToast]);
 
   async function handleCreateRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -594,8 +604,14 @@ export function AutomationDashboard() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
-                            {job.status === "waiting_for_operator" && (
+                            {job.phase === "WAITING_FOR_OTP" && (
                               <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">OTP Needed</span>
+                            )}
+                            {job.phase === "CAPTCHA_REQUIRED" && job.status === "waiting_for_operator" && (
+                              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">CAPTCHA</span>
+                            )}
+                            {job.status === "waiting_for_operator" && job.phase !== "WAITING_FOR_OTP" && job.phase !== "CAPTCHA_REQUIRED" && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">Action Needed</span>
                             )}
                             <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
                           </div>
@@ -828,6 +844,12 @@ function statusFromEvent(event: JobEvent) {
   if (event.phase === "FAILED") return "failed";
   if (event.phase === "CANCELLED") return "cancelled";
   if (event.phase === "WAITING_FOR_OTP") return "waiting_for_operator";
+  if (
+    event.phase === "CAPTCHA_REQUIRED" &&
+    (event.step === "captcha_manual_required" || event.step === "captcha_waiting")
+  ) {
+    return "waiting_for_operator";
+  }
   return "running";
 }
 

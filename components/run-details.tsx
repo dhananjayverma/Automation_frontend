@@ -94,18 +94,32 @@ export function RunDetails({
   const isRunning = !isTerminal && job.status !== "completed" && job.status !== "failed" && job.status !== "cancelled";
   const isFailed = job.phase === "FAILED" || job.phase === "CANCELLED";
   const isCompleted = job.phase === "COMPLETED";
-  const isWaitingOtp = job.phase === "WAITING_FOR_OTP";
   const isCaptcha = job.phase === "CAPTCHA_REQUIRED";
   const latestCaptchaEvent = [...events].reverse().find((event) => event.phase === "CAPTCHA_REQUIRED");
   const captchaStep = latestCaptchaEvent?.step;
-  const needsManualBrowserAction =
-    isCaptcha &&
-    isRunning &&
-    (captchaStep === "captcha_manual_required" || captchaStep === "captcha_waiting");
+  const latestOtpEvent = [...events].reverse().find(
+    (event) =>
+      event.phase === "WAITING_FOR_OTP" ||
+      event.step === "otp_required" ||
+      event.step === "wrong_otp" ||
+      event.step === "otp_supplied",
+  );
+  const needsManualBrowserAction = isCaptcha && isRunning;
   const captchaHint =
     captchaStep === "captcha_manual_required"
-      ? "CAPTCHA detected in browser."
-      : "Solve CAPTCHA in browser, then click Continue once.";
+      ? "CAPTCHA detected in the Playwright browser window."
+      : "Open the Playwright browser, solve CAPTCHA on the recovery form, then click Continue below.";
+  const isWaitingOtp =
+    job.phase === "WAITING_FOR_OTP" ||
+    latestOtpEvent?.step === "wrong_otp" ||
+    (job.phase === "OTP_REQUIRED" && latestOtpEvent?.step === "otp_required");
+  const otpHint =
+    latestOtpEvent?.step === "wrong_otp"
+      ? "Portal rejected the last OTP. Enter a fresh 6-digit OTP from your phone/email."
+      : job.phase === "OTP_REQUIRED"
+        ? "OTP should arrive on your registered mobile/email. Enter it here — bot will fill the portal form."
+        : "Enter the 6-digit OTP here. Do not type OTP in the Playwright browser window.";
+  const showOperatorGuide = isRunning && (needsManualBrowserAction || isWaitingOtp);
 
   return (
     <div className="space-y-4">
@@ -120,6 +134,12 @@ export function RunDetails({
               <span className="flex items-center gap-1 text-[9px] font-black text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
                 RUNNING
+              </span>
+            )}
+            {needsManualBrowserAction && (
+              <span className="flex items-center gap-1 text-[9px] font-black text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                CAPTCHA
               </span>
             )}
             {isWaitingOtp && (
@@ -198,6 +218,21 @@ export function RunDetails({
         </div>
       </div>
 
+      {showOperatorGuide && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Operator steps</p>
+          <ol className="text-[11px] text-slate-700 font-medium space-y-1.5 list-decimal list-inside">
+            <li className={needsManualBrowserAction ? "text-[#f97316] font-bold" : "text-slate-400"}>
+              Solve CAPTCHA in the Playwright browser → click Continue below
+            </li>
+            <li className={isWaitingOtp ? "text-[#f97316] font-bold" : "text-slate-400"}>
+              When OTP arrives on phone/email → enter it here (not in browser)
+            </li>
+            <li className="text-slate-400">Bot fills password on portal and saves encrypted credentials</li>
+          </ol>
+        </div>
+      )}
+
       {/* CAPTCHA instruction */}
       {needsManualBrowserAction && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -232,8 +267,8 @@ export function RunDetails({
               <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-800">Enter OTP</p>
-              <p className="text-[10px] text-slate-500 font-medium">Check your registered mobile / email for the 6-digit OTP</p>
+              <p className="text-xs font-bold text-slate-800">Enter OTP in dashboard</p>
+              <p className="text-[10px] text-slate-500 font-medium">{otpHint}</p>
             </div>
           </div>
           {error && (
@@ -271,16 +306,31 @@ export function RunDetails({
             <p className="text-xs font-bold text-emerald-800">Credentials Generated Successfully</p>
           </div>
           <div className="space-y-2">
-            <div className="bg-white rounded-lg border border-emerald-100 px-3 py-2 flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">User ID (PAN)</span>
-              <span className="text-xs font-black font-mono text-slate-800">{job.result.userId || job.maskedPan}</span>
+            <div className="bg-white rounded-lg border border-emerald-100 px-3 py-2 flex items-center justify-between gap-3">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">User ID (PAN)</span>
+              <span className="text-xs font-black font-mono text-slate-800 break-all text-right">{job.result.userId || job.maskedPan}</span>
             </div>
-            <div className="bg-white rounded-lg border border-emerald-100 px-3 py-2 flex items-center justify-between">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Password</span>
-              <span className="text-xs font-black font-mono text-slate-800">{job.result.passwordSaved ? "[encrypted and saved]" : "[not saved]"}</span>
+            <div className="bg-white rounded-lg border border-emerald-100 px-3 py-2 flex items-center justify-between gap-3">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0">Password</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-black font-mono text-slate-800 break-all text-right">
+                  {job.result.password || (job.result.passwordSaved ? "[saved — refresh run]" : "[not saved]")}
+                </span>
+                {job.result.password && (
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard.writeText(job.result?.password || "").catch(() => {})}
+                    className="text-[10px] font-bold text-[#f97316] hover:underline shrink-0 cursor-pointer"
+                  >
+                    Copy
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-          <p className="text-[10px] text-emerald-700 font-medium mt-2">Password is encrypted at rest and is not displayed in the dashboard.</p>
+          <p className="text-[10px] text-emerald-700 font-medium mt-2">
+            Bot set this password on the portal reset screen. Stored encrypted in MongoDB; shown here for the operator after success.
+          </p>
         </div>
       )}
 
