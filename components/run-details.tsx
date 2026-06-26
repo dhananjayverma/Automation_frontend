@@ -110,14 +110,18 @@ export function RunDetails({
       ? "CAPTCHA detected in the Playwright browser window."
       : "Open the Playwright browser, solve CAPTCHA on the recovery form, then click Continue below.";
   const isWaitingOtp =
+    job.phase === "OTP_REQUIRED" ||
     job.phase === "WAITING_FOR_OTP" ||
     latestOtpEvent?.step === "wrong_otp" ||
-    (job.phase === "OTP_REQUIRED" && latestOtpEvent?.step === "otp_required");
+    latestOtpEvent?.step === "otp_required" ||
+    latestOtpEvent?.step === "uidai_error";
   const otpHint =
     latestOtpEvent?.step === "wrong_otp"
       ? "Portal rejected the last OTP. Enter a fresh 6-digit OTP from your phone/email."
-      : job.phase === "OTP_REQUIRED"
-        ? "OTP should arrive on your registered mobile/email. Enter it here — bot will fill the portal form."
+      : latestOtpEvent?.step === "uidai_error"
+        ? "Portal is retrying UIDAI. If the OTP arrives, enter it here — the bot will continue from the browser."
+        : job.phase === "OTP_REQUIRED"
+          ? "OTP should arrive on your registered mobile/email. Enter it here — bot will fill the portal form."
         : "Enter the 6-digit OTP here. Do not type OTP in the Playwright browser window.";
   const showOperatorGuide = isRunning && (needsManualBrowserAction || isWaitingOtp);
 

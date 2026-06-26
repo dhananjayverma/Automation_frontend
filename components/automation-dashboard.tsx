@@ -197,7 +197,7 @@ export function AutomationDashboard() {
           showToast("OTP needed — enter it in this dashboard (not in the browser).", "info");
         }
         if (event.step === "uidai_error") {
-          showToast(event.message, "error");
+          showToast("UIDAI is temporarily unavailable. If an OTP arrives, enter it in the dashboard.", "info");
         }
         if (event.step === "wrong_otp") {
           showToast(event.message, "error");
