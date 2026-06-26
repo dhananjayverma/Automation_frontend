@@ -84,14 +84,14 @@ flowchart TD
     Q --> R[Emit OTP_REQUIRED]
     R --> S[Emit WAITING_FOR_OTP]
     S --> T[Operator enters OTP in dashboard]
-    T --> U[Bot types OTP digit-by-digit]
-    U --> V{OTP accepted?}
+    T --> U[Bot fills OTP on portal]
+    U --> V[Bot clicks Verify and waits for transition]
+    V --> W{Portal reaches Set New Password?}
 
-    V -->|Invalid / expired| W[Emit retry / wrong OTP]
-    W --> S
+    W -->|Invalid / expired| X[Emit retry / wrong OTP]
+    X --> S
 
-    V -->|Accepted| X[Detect Set New Password page]
-    X --> Y[Emit OTP_VERIFIED]
+    W -->|Accepted| Y[Emit OTP_VERIFIED]
     Y --> Z[Generate strong password]
     Z --> AA[Fill password + confirm password]
     AA --> AB[Submit password reset]
@@ -146,6 +146,7 @@ sequenceDiagram
     UI->>API: POST /jobs/:id/otp
     API->>Runner: Resolve waitForOtp(jobId)
     Runner->>Portal: Type OTP digit-by-digit
+    Runner->>Portal: Click Verify and wait for password screen
     Portal-->>Runner: Navigate to Set New Password
     Runner->>API: Emit OTP_VERIFIED
     Runner->>Portal: Fill new password and submit
@@ -172,7 +173,7 @@ flowchart TB
         WebhookRoute["routes/webhook.js\nEvent ingest"]
         MetricsRoute["routes/metrics.js\nKPIs"]
         Engine["automationEngine.js\nResolvers, cancel, lifecycle"]
-        Runner["playwrightPortalRunner.js\nPortal automation"]
+        Runner["playwrightPortalRunner.js\nPortal automation, OTP verify wait, and password reset handling"]
         EventService["eventService.js\nState transition + persistence"]
         SseHub["sseHub.js\nBroadcast + replay format"]
     end
@@ -204,6 +205,7 @@ flowchart TB
 ### Design Choices
 
 - **Backend owns state:** every phase transition is validated and persisted through `eventService`.
+- **OTP handoff is explicit:** `WAITING_FOR_OTP` means the dashboard should accept the code, and `OTP_VERIFIED` is emitted only after the portal really reaches the password reset screen.
 - **Frontend is live but recoverable:** UI reads historical events first, then attaches SSE using `afterSeq`.
 - **Human-in-the-loop boundaries:** CAPTCHA and OTP are intentionally operator-driven.
 - **Automation is resilient to portal variation:** Playwright uses text, role, Angular Material, and DOM fallbacks.
@@ -343,8 +345,9 @@ Runner now:
 - dispatches `input`, `change`, and `keyup`
 - blurs the last field
 - presses Tab
-- waits for Angular validation
-- avoids clicking disabled Verify/Submit buttons
+- clicks `Verify` after filling the code
+- waits for the portal to actually transition to the password screen
+- avoids treating a prefilled OTP box as success
 
 If portal auto-verifies OTP and navigates directly to password page, runner detects:
 
@@ -353,7 +356,7 @@ Set New Password
 Confirm New Password
 ```
 
-and emits `OTP_VERIFIED`.
+and emits `OTP_VERIFIED` only after the password reset screen is visible.
 
 ### Password Reset
 
@@ -363,7 +366,7 @@ Runner:
 - fills `Set New Password`
 - fills `Confirm New Password`
 - dispatches Angular validation events
-- waits for enabled Submit button
+- waits for enabled Submit button and final password confirmation
 - marks run `PASSWORD_GENERATED`
 - stores encrypted result on `COMPLETED`
 
@@ -658,7 +661,7 @@ frontend build: passing
 7. Confirm bot selects OTP channel and Generate OTP.
 8. Confirm bot ticks Aadhaar consent and clicks Generate Aadhaar OTP.
 9. Enter OTP in dashboard.
-10. Confirm bot detects password reset page.
+10. Confirm bot clicks Verify and then detects password reset page.
 11. Confirm password is generated and submitted.
 12. Confirm run becomes `COMPLETED`.
 13. Confirm metrics update.
@@ -669,6 +672,6 @@ frontend build: passing
 
 ## Notes for Reviewers
 
-This project intentionally keeps OTP human-in-the-loop. The automation does not read SMS/email OTPs. Instead, it pauses at `WAITING_FOR_OTP`, stores a resolver in memory, accepts operator OTP from the dashboard, then resumes the Playwright flow.
+This project intentionally keeps OTP human-in-the-loop. The automation does not read SMS/email OTPs. Instead, it pauses at `WAITING_FOR_OTP`, stores a resolver in memory, accepts operator OTP from the dashboard, then resumes the Playwright flow. The runner only promotes to `OTP_VERIFIED` after the portal actually reaches the reset-password screen.
 
 The implementation also includes a race fix: if the operator submits OTP just before the resolver is registered, the backend queues the OTP and `waitForOtp()` consumes it immediately.
