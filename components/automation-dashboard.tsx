@@ -21,6 +21,7 @@ import { LiveEventConsole, RunDetails } from "./run-details";
 
 type Tab = "dashboard" | "runs" | "live" | "metrics" | "settings";
 type Toast = { id: string; tone: "success" | "error" | "info"; message: string };
+type StreamState = "idle" | "connecting" | "connected" | "disconnected" | "error";
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -90,6 +91,7 @@ export function AutomationDashboard() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [continueBusy, setContinueBusy] = useState(false);
+  const [streamState, setStreamState] = useState<StreamState>("idle");
   const lastSeqRef = useRef(0);
   const jobsRequestSeqRef = useRef(0);
   const toastSeqRef = useRef(0);
@@ -163,9 +165,14 @@ export function AutomationDashboard() {
   }, [refreshJobs]);
 
   useEffect(() => {
-    if (!activeJobId) { lastSeqRef.current = 0; return; }
+    if (!activeJobId) {
+      lastSeqRef.current = 0;
+      setStreamState("idle");
+      return;
+    }
     let closed = false;
     let cleanup: (() => void) | undefined;
+    setStreamState("connecting");
 
     async function connectStream() {
       const history = await getJobEvents(activeJobId);
@@ -173,6 +180,7 @@ export function AutomationDashboard() {
       setEvents(history);
       lastSeqRef.current = history.at(-1)?.seq || 0;
       const stream = openEventStream(activeJobId, lastSeqRef.current);
+      setStreamState("connected");
       stream.addEventListener("job-event", (message) => {
         const event = JSON.parse((message as MessageEvent).data) as JobEvent;
         lastSeqRef.current = Math.max(lastSeqRef.current, event.seq);
@@ -216,12 +224,26 @@ export function AutomationDashboard() {
           refreshMetrics().catch(() => {});
         }
       });
-      stream.onerror = () => setError("Live stream disconnected. Browser will retry automatically.");
-      cleanup = () => stream.close();
+      stream.onerror = () => {
+        setStreamState("disconnected");
+        setError("Live stream disconnected. Browser will retry automatically.");
+      };
+      cleanup = () => {
+        setStreamState("idle");
+        stream.close();
+      };
     }
 
-    connectStream().catch(() => setError("Could not load event history."));
-    return () => { closed = true; cleanup?.(); };
+    connectStream().catch(() => {
+      if (!closed) {
+        setStreamState("error");
+        setError("Could not load event history.");
+      }
+    });
+    return () => {
+      closed = true;
+      cleanup?.();
+    };
   }, [activeJobId, refreshJobs, refreshMetrics, showToast]);
 
   async function handleCreateRun(event: FormEvent<HTMLFormElement>) {
@@ -533,7 +555,7 @@ export function AutomationDashboard() {
                     onDelete={handleDeleteRun}
                   />
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 xl:sticky xl:top-6 self-start">
                   <RunDetails
                     job={selectedJob} events={events} otp={otp} error={error}
                     autoScroll={autoScroll}
@@ -621,14 +643,6 @@ export function AutomationDashboard() {
                   )}
                 </div>
 
-                <LiveEventConsole
-                  events={events}
-                  autoScroll={autoScroll}
-                  isLive={Boolean(selectedJob && (selectedJob.status === "running" || selectedJob.status === "waiting_for_operator"))}
-                  heightClass="h-[420px]"
-                  onAutoScrollChange={setAutoScroll}
-                />
-
                 {/* All completed runs at bottom */}
                 {jobs.filter(j => j.status === "completed").length > 0 && (
                   <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
@@ -655,10 +669,52 @@ export function AutomationDashboard() {
               </div>
 
               {/* Right: Run Details Console */}
-              <div className="min-w-0">
+              <div className="min-w-0 space-y-4 xl:sticky xl:top-6">
+                <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Live Events</p>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                        SSE stream for CAPTCHA, OTP, and password updates
+                      </p>
+                    </div>
+                    <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                      streamState === "connected"
+                        ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                        : streamState === "connecting"
+                        ? "text-blue-700 bg-blue-50 border-blue-200"
+                        : streamState === "disconnected"
+                        ? "text-amber-700 bg-amber-50 border-amber-200"
+                        : streamState === "error"
+                        ? "text-red-700 bg-red-50 border-red-200"
+                        : "text-slate-500 bg-slate-50 border-slate-200"
+                    }`}>
+                      {streamState === "connected"
+                        ? "Connected"
+                        : streamState === "connecting"
+                        ? "Connecting"
+                        : streamState === "disconnected"
+                        ? "Reconnecting"
+                        : streamState === "error"
+                        ? "Error"
+                        : "SSE ready"}
+                    </span>
+                  </div>
+                  <LiveEventConsole
+                    events={events}
+                    autoScroll={autoScroll}
+                    isLive={Boolean(selectedJob && (selectedJob.status === "running" || selectedJob.status === "waiting_for_operator"))}
+                    streamState={streamState}
+                    heightClass="h-[420px]"
+                    className="rounded-none border-0 shadow-none"
+                    onAutoScrollChange={setAutoScroll}
+                  />
+                </div>
+
                 <RunDetails
                   job={selectedJob} events={events} otp={otp} error={error}
                   autoScroll={autoScroll}
+                  streamState={streamState}
                   onOtpChange={setOtp}
                   onSubmitOtp={handleSubmitOtp}
                   onContinueCaptcha={handleContinueCaptcha}

@@ -44,6 +44,7 @@ export function RunDetails({
   otp,
   error,
   autoScroll = true,
+  streamState = "idle",
   onOtpChange,
   onSubmitOtp,
   onContinueCaptcha,
@@ -57,6 +58,7 @@ export function RunDetails({
   otp: string;
   error: string;
   autoScroll?: boolean;
+  streamState?: "idle" | "connecting" | "connected" | "disconnected" | "error";
   onOtpChange: (v: string) => void;
   onSubmitOtp: () => void;
   onContinueCaptcha: () => void;
@@ -348,6 +350,7 @@ export function RunDetails({
           events={events}
           autoScroll={autoScroll}
           isLive={isRunning}
+          streamState={streamState}
           onAutoScrollChange={onAutoScrollChange}
         />
       )}
@@ -359,6 +362,7 @@ export function LiveEventConsole({
   events,
   autoScroll,
   isLive,
+  streamState = "idle",
   className = "",
   heightClass = "h-60",
   onAutoScrollChange,
@@ -366,6 +370,7 @@ export function LiveEventConsole({
   events: JobEvent[];
   autoScroll: boolean;
   isLive: boolean;
+  streamState?: "idle" | "connecting" | "connected" | "disconnected" | "error";
   className?: string;
   heightClass?: string;
   onAutoScrollChange: (v: boolean) => void;
@@ -379,21 +384,58 @@ export function LiveEventConsole({
   }, [autoScroll, events]);
 
   return (
-    <div className={`bg-[#0d1117] rounded-xl border border-slate-800 overflow-hidden shadow-sm ${className}`}>
-      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3 bg-[#0b1018]">
+    <div className={`relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-[#0a1018] via-[#0d1117] to-[#111827] shadow-[0_24px_80px_-20px_rgba(15,23,42,0.95)] ${className}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.12),transparent_36%),radial-gradient(circle_at_bottom_left,rgba(16,185,129,0.08),transparent_30%)]" />
+      <div className="relative px-4 py-3 border-b border-white/5 flex items-center justify-between gap-3 bg-white/[0.03] backdrop-blur-sm">
         <div className="flex items-center gap-2 min-w-0">
           <div className="flex gap-1.5 shrink-0">
-            <div className="h-2.5 w-2.5 rounded-full bg-red-500/80" />
-            <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/80" />
-            <div className="h-2.5 w-2.5 rounded-full bg-green-500/80" />
+            <div className="h-2.5 w-2.5 rounded-full bg-red-500/80 shadow-[0_0_12px_rgba(239,68,68,0.45)]" />
+            <div className="h-2.5 w-2.5 rounded-full bg-yellow-500/80 shadow-[0_0_12px_rgba(234,179,8,0.35)]" />
+            <div className="h-2.5 w-2.5 rounded-full bg-green-500/80 shadow-[0_0_12px_rgba(34,197,94,0.35)]" />
           </div>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Live Events</p>
-            <p className="text-[10px] font-mono text-slate-600">{events.length} event{events.length !== 1 ? "s" : ""} received</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-slate-300">Live Events</p>
+            <p className="text-[10px] font-mono text-slate-500">{events.length} event{events.length !== 1 ? "s" : ""} received</p>
           </div>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <label className="flex items-center gap-2 text-[10px] font-bold text-slate-500 cursor-pointer">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <span
+            className={`flex items-center gap-1 text-[9px] font-black px-2.5 py-1 rounded-full border backdrop-blur-sm ${
+              streamState === "connected"
+                ? "text-emerald-300 bg-emerald-500/10 border-emerald-400/20"
+                : streamState === "connecting"
+                ? "text-sky-300 bg-sky-500/10 border-sky-400/20"
+                : streamState === "disconnected"
+                ? "text-amber-300 bg-amber-500/10 border-amber-400/20"
+                : streamState === "error"
+                ? "text-red-300 bg-red-500/10 border-red-400/20"
+                : "text-slate-300 bg-slate-500/10 border-slate-400/20"
+            }`}
+          >
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                streamState === "connected"
+                  ? "bg-emerald-300 animate-pulse"
+                  : streamState === "connecting"
+                  ? "bg-sky-300 animate-pulse"
+                  : streamState === "disconnected"
+                  ? "bg-amber-300 animate-pulse"
+                  : streamState === "error"
+                  ? "bg-red-300"
+                  : "bg-slate-400"
+              }`}
+            />
+            {streamState === "connected"
+              ? "SSE connected"
+              : streamState === "connecting"
+              ? "Connecting"
+              : streamState === "disconnected"
+              ? "Reconnecting"
+              : streamState === "error"
+              ? "Stream error"
+              : "SSE ready"}
+          </span>
+          <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 cursor-pointer">
             <input
               type="checkbox"
               checked={autoScroll}
@@ -403,28 +445,44 @@ export function LiveEventConsole({
             Auto-scroll
           </label>
           {isLive && (
-            <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="flex items-center gap-1 text-[9px] font-black text-emerald-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse shadow-[0_0_10px_rgba(110,231,183,0.4)]" />
               LIVE
             </span>
           )}
         </div>
       </div>
-      <div ref={logRef} className={`${heightClass} overflow-y-auto p-4 space-y-2 font-mono text-[11px] scrollbar-thin`}>
+      <div ref={logRef} className={`relative ${heightClass} overflow-y-auto p-4 space-y-2 font-mono text-[11px] scrollbar-thin`}>
+        <div className="mb-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[10px] text-slate-300 shadow-inner shadow-black/20">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
+            <span className="font-bold uppercase tracking-[0.18em] text-[9px] text-slate-400">No refresh needed</span>
+          </div>
+          Live updates arrive over SSE, so OTP and CAPTCHA state changes appear instantly.
+        </div>
         {events.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-slate-600">
-            Waiting for events...
+          <div className="h-full min-h-40 flex flex-col items-center justify-center text-slate-500 gap-2">
+            <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center">
+              <span className="h-2 w-2 rounded-full bg-slate-500 animate-pulse" />
+            </div>
+            <p className="text-xs font-semibold">Waiting for events...</p>
+            <p className="text-[10px] text-slate-600 text-center max-w-[220px]">
+              The Playwright run will stream each step here as soon as the backend emits it.
+            </p>
           </div>
         ) : (
           events.map((ev) => (
-            <div key={ev.eventId} className="grid grid-cols-[64px_42px_1fr] gap-2 items-start leading-relaxed">
-              <span className="text-slate-600 shrink-0">{new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })}</span>
+            <div
+              key={ev.eventId}
+              className="grid grid-cols-[64px_42px_1fr] gap-2 items-start leading-relaxed rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04]"
+            >
+              <span className="text-slate-500 shrink-0">{new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })}</span>
               <span className={`shrink-0 text-center font-bold uppercase text-[9px] px-1 rounded ${
-                ev.level === "error" ? "bg-red-900/60 text-red-300" :
-                ev.level === "warn"  ? "bg-yellow-900/60 text-yellow-300" :
-                "bg-blue-900/40 text-blue-300"
+                ev.level === "error" ? "bg-red-500/15 text-red-300 border border-red-500/15" :
+                ev.level === "warn"  ? "bg-amber-500/15 text-amber-300 border border-amber-500/15" :
+                "bg-sky-500/15 text-sky-300 border border-sky-500/15"
               }`}>{ev.level}</span>
-              <span className="text-slate-300 whitespace-pre-wrap break-words">{ev.message}</span>
+              <span className="text-slate-200 whitespace-pre-wrap break-words">{ev.message}</span>
             </div>
           ))
         )}
