@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelJob,
   createJob,
@@ -24,7 +25,7 @@ type Toast = { id: string; tone: "success" | "error" | "info"; message: string }
 type StreamState = "idle" | "connecting" | "connected" | "disconnected" | "error";
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
-const NAV_ITEMS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+const NAV_ITEMS: { id: Tab; label: string; icon: ReactNode }[] = [
   {
     id: "dashboard",
     label: "Dashboard",
