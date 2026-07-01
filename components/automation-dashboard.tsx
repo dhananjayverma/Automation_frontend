@@ -20,7 +20,7 @@ import { JobsTable } from "./jobs-table";
 import { MetricCard } from "./metric-card";
 import { LiveEventConsole, RunDetails } from "./run-details";
 
-type Tab = "dashboard" | "runs" | "live" | "metrics" | "settings";
+type Tab = "dashboard" | "runs" | "metrics" | "settings";
 type Toast = { id: string; tone: "success" | "error" | "info"; message: string };
 type StreamState = "idle" | "connecting" | "connected" | "disconnected" | "error";
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
@@ -41,15 +41,6 @@ const NAV_ITEMS: { id: Tab; label: string; icon: ReactNode }[] = [
     icon: (
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-      </svg>
-    ),
-  },
-  {
-    id: "live",
-    label: "Live Runs",
-    icon: (
-      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
       </svg>
     ),
   },
@@ -173,66 +164,98 @@ export function AutomationDashboard() {
     }
     let closed = false;
     let cleanup: (() => void) | undefined;
+    let reconnectTimer: number | undefined;
     const connectingTimer = window.setTimeout(() => setStreamState("connecting"), 0);
+    const reconnectDelayMs = 3000;
 
     async function connectStream() {
-      const history = await getJobEvents(activeJobId);
       if (closed) return;
-      setEvents(history);
-      lastSeqRef.current = history.at(-1)?.seq || 0;
-      const stream = openEventStream(activeJobId, lastSeqRef.current);
-      setStreamState("connected");
-      stream.addEventListener("job-event", (message) => {
-        const event = JSON.parse((message as MessageEvent).data) as JobEvent;
-        lastSeqRef.current = Math.max(lastSeqRef.current, event.seq);
-        setEvents((current) => {
-          if (current.some((item) => item.eventId === event.eventId)) return current;
-          return [...current, event].sort((a, b) => a.seq - b.seq);
+      window.clearTimeout(reconnectTimer);
+      setStreamState("connecting");
+      try {
+        const history = await getJobEvents(activeJobId);
+        if (closed) return;
+        setEvents(history);
+        lastSeqRef.current = history.at(-1)?.seq || 0;
+
+        const stream = openEventStream(activeJobId, lastSeqRef.current);
+        stream.onopen = () => {
+          if (closed) return;
+          window.clearTimeout(reconnectTimer);
+          setStreamState("connected");
+          setError("");
+        };
+        stream.addEventListener("job-event", (message) => {
+          const event = JSON.parse((message as MessageEvent).data) as JobEvent;
+          lastSeqRef.current = Math.max(lastSeqRef.current, event.seq);
+          setEvents((current) => {
+            if (current.some((item) => item.eventId === event.eventId)) return current;
+            return [...current, event].sort((a, b) => a.seq - b.seq);
+          });
+          setJobs((current) =>
+            current.map((job) =>
+              job.jobId === event.jobId
+                ? { ...job, phase: event.phase, status: statusFromEvent(event), updatedAt: event.timestamp }
+                : job,
+            ),
+          );
+          if (event.step === "captcha_manual_required") {
+            showToast("CAPTCHA: solve it in the Playwright browser, then click Continue.", "info");
+          }
+          if (event.step === "captcha_waiting") {
+            showToast("Still waiting on CAPTCHA — solve in browser, then click Continue.", "info");
+          }
+          if (event.step === "otp_required" || (event.phase === "WAITING_FOR_OTP" && event.step === "waiting_for_otp")) {
+            showToast("OTP needed — enter it in this dashboard (not in the browser).", "info");
+          }
+          if (event.step === "uidai_error") {
+            showToast("UIDAI is temporarily unavailable. If an OTP arrives, enter it in the dashboard.", "info");
+          }
+          if (event.step === "wrong_otp") {
+            showToast(event.message, "error");
+          }
+          if (event.phase === "COMPLETED") {
+            showToast("Run completed — credentials are ready in the console.", "success");
+            refreshJobs().catch(() => {});
+            refreshMetrics().catch(() => {});
+          }
+          if (event.phase === "FAILED") {
+            showToast(event.error?.message || "Run failed.", "error");
+            refreshMetrics().catch(() => {});
+          }
+          if (event.phase === "CANCELLED") {
+            showToast("Run cancelled.", "info");
+            refreshMetrics().catch(() => {});
+          }
         });
-        setJobs((current) =>
-          current.map((job) =>
-            job.jobId === event.jobId
-              ? { ...job, phase: event.phase, status: statusFromEvent(event), updatedAt: event.timestamp }
-              : job,
-          ),
-        );
-        if (event.step === "captcha_manual_required") {
-          showToast("CAPTCHA: solve it in the Playwright browser, then click Continue.", "info");
-        }
-        if (event.step === "captcha_waiting") {
-          showToast("Still waiting on CAPTCHA — solve in browser, then click Continue.", "info");
-        }
-        if (event.step === "otp_required" || (event.phase === "WAITING_FOR_OTP" && event.step === "waiting_for_otp")) {
-          showToast("OTP needed — enter it in this dashboard (not in the browser).", "info");
-        }
-        if (event.step === "uidai_error") {
-          showToast("UIDAI is temporarily unavailable. If an OTP arrives, enter it in the dashboard.", "info");
-        }
-        if (event.step === "wrong_otp") {
-          showToast(event.message, "error");
-        }
-        if (event.phase === "COMPLETED") {
-          showToast("Run completed — credentials are ready in the console.", "success");
-          refreshJobs().catch(() => {});
-          refreshMetrics().catch(() => {});
-        }
-        if (event.phase === "FAILED") {
-          showToast(event.error?.message || "Run failed.", "error");
-          refreshMetrics().catch(() => {});
-        }
-        if (event.phase === "CANCELLED") {
-          showToast("Run cancelled.", "info");
-          refreshMetrics().catch(() => {});
-        }
-      });
-      stream.onerror = () => {
-        setStreamState("disconnected");
-        setError("Live stream disconnected. Browser will retry automatically.");
-      };
-      cleanup = () => {
-        setStreamState("idle");
-        stream.close();
-      };
+        stream.onerror = () => {
+          if (closed) return;
+          window.clearTimeout(reconnectTimer);
+          setStreamState("disconnected");
+          setError("Live stream disconnected. Reconnecting automatically...");
+          stream.close();
+          reconnectTimer = window.setTimeout(() => {
+            if (!closed) {
+              void connectStream();
+            }
+          }, reconnectDelayMs);
+        };
+        cleanup = () => {
+          setStreamState("idle");
+          window.clearTimeout(reconnectTimer);
+          stream.close();
+        };
+      } catch (caught) {
+        if (closed) return;
+        setStreamState("error");
+        setError(errorMessage(caught, "Could not load event history."));
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = window.setTimeout(() => {
+          if (!closed) {
+            void connectStream();
+          }
+        }, reconnectDelayMs);
+      }
     }
 
     connectStream().catch(() => {
@@ -243,6 +266,7 @@ export function AutomationDashboard() {
     });
     return () => {
       window.clearTimeout(connectingTimer);
+      window.clearTimeout(reconnectTimer);
       closed = true;
       cleanup?.();
     };
@@ -266,7 +290,7 @@ export function AutomationDashboard() {
       setJobs((current) => [job, ...current.filter((item) => item.jobId !== job.jobId)]);
       setTotalJobs((current) => Math.max(current + 1, 1));
       await refreshJobs();
-      setActiveTab("live");
+      setActiveTab("dashboard");
       showToast("Run started. Opening live console.", "success");
     } catch (caught) {
       const message = errorMessage(caught, "Could not start run.");
@@ -357,7 +381,6 @@ export function AutomationDashboard() {
     setStatusFilter(value);
   }
 
-  const liveJobs = jobs.filter((j) => j.status === "running" || j.status === "waiting_for_operator");
   const metricsTrend = metricsLoading ? "Loading..." : "Unavailable";
 
   return (
@@ -410,12 +433,6 @@ export function AutomationDashboard() {
                 >
                   <span className={isActive ? "text-[#f97316]" : "text-slate-400"}>{item.icon}</span>
                   {item.label}
-                  {/* Live badge */}
-                  {item.id === "live" && liveJobs.length > 0 && (
-                    <span className="ml-auto bg-[#f97316] text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                      {liveJobs.length}
-                    </span>
-                  )}
                 </button>
               );
             })}
@@ -447,39 +464,17 @@ export function AutomationDashboard() {
             <h1 className="text-lg font-bold text-slate-800">
               {activeTab === "dashboard" && "Automation Dashboard"}
               {activeTab === "runs" && "All Runs"}
-              {activeTab === "live" && "Live Runs"}
               {activeTab === "metrics" && "Metrics & Analytics"}
               {activeTab === "settings" && "Settings"}
             </h1>
             <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
               {activeTab === "dashboard" && "Monitor ITR credential generation runs in real-time"}
               {activeTab === "runs" && "Browse and search all historical automation runs"}
-              {activeTab === "live" && "Runs currently active — submit OTP or cancel runs here"}
               {activeTab === "metrics" && "Performance and success metrics across all runs"}
               {activeTab === "settings" && "Configure automation behaviour and backend settings"}
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                Promise.all([refreshJobs(), refreshMetrics()])
-                  .then(() => showToast("Dashboard refreshed.", "success"))
-                  .catch((caught) => {
-                    const message = errorMessage(caught, "Could not refresh dashboard.");
-                    setError(message);
-                    showToast(message, "error");
-                  });
-              }}
-              disabled={jobsLoading || metricsLoading}
-              className="h-9 rounded-lg hover:bg-slate-100 flex items-center gap-2 px-3 text-slate-500 transition-colors border border-slate-200 bg-white disabled:opacity-60 disabled:cursor-not-allowed"
-              title="Refresh dashboard"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v6h6M20 20v-6h-6M5.5 15A7 7 0 0018 17.5M18.5 9A7 7 0 006 6.5" />
-              </svg>
-              <span className="text-xs font-bold hidden sm:inline">{jobsLoading || metricsLoading ? "Refreshing" : "Refresh"}</span>
-            </button>
             <div className="flex items-center gap-2 border border-slate-200 rounded-full pl-1.5 pr-3 py-1 bg-white cursor-pointer shadow-sm hover:border-slate-300 transition-colors">
               <div className="h-7 w-7 rounded-full bg-[#f97316] flex items-center justify-center text-white text-xs font-bold shadow-sm shadow-orange-100 shrink-0">O</div>
               <span className="text-xs font-bold text-slate-700">Operator</span>
@@ -561,7 +556,7 @@ export function AutomationDashboard() {
                     onSearchChange={setSearch} onPhaseChange={handlePhaseChange}
                     onStatusChange={handleStatusChange} onRefresh={refreshJobs}
                     loading={jobsLoading}
-                    onSelect={(id) => { setSelectedJobId(id); setActiveTab("live"); }}
+                    onSelect={(id) => { setSelectedJobId(id); setActiveTab("dashboard"); }}
                     onDelete={handleDeleteRun}
                     compact
                     elevated
@@ -641,148 +636,9 @@ export function AutomationDashboard() {
                 onSearchChange={setSearch} onPhaseChange={handlePhaseChange}
                 onStatusChange={handleStatusChange} onRefresh={refreshJobs}
                 loading={jobsLoading}
-                onSelect={(id) => { setSelectedJobId(id); setActiveTab("live"); }}
+                onSelect={(id) => { setSelectedJobId(id); setActiveTab("dashboard"); }}
                 onDelete={handleDeleteRun}
               />
-            </div>
-          )}
-
-          {/* ══════════════ LIVE RUNS TAB ══════════════ */}
-          {activeTab === "live" && (
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(340px,0.82fr)_minmax(0,1.18fr)] gap-6 items-start">
-              {/* Left: active jobs list + event stream */}
-              <div className="space-y-4">
-                <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Live Runs</h2>
-                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">{liveJobs.length} run{liveJobs.length !== 1 ? "s" : ""} currently active</p>
-                    </div>
-                    <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-full">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                      LIVE
-                    </span>
-                  </div>
-                  {liveJobs.length === 0 ? (
-                    <div className="px-5 py-16 flex flex-col items-center gap-3 text-slate-400">
-                      <svg className="w-10 h-10 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                      <span className="text-xs font-semibold text-slate-500">No live runs right now</span>
-                      <button onClick={() => setActiveTab("dashboard")} className="text-xs font-bold text-[#f97316] hover:underline cursor-pointer">← Start a new run</button>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {liveJobs.map((job) => (
-                        <div
-                          key={job.jobId}
-                          onClick={() => setSelectedJobId(job.jobId)}
-                          className={`px-5 py-4 flex items-center justify-between cursor-pointer transition-colors ${selectedJob?.jobId === job.jobId ? "bg-orange-50/30" : "hover:bg-slate-50"}`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="h-2.5 w-2.5 rounded-full bg-[#f97316] animate-pulse shrink-0 shadow-sm shadow-orange-200" />
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800">#{job.jobId.slice(0, 8)}</p>
-                              <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{job.maskedPan} · {job.phase}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {job.phase === "WAITING_FOR_OTP" && (
-                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">OTP Needed</span>
-                            )}
-                            {job.phase === "CAPTCHA_REQUIRED" && job.status === "waiting_for_operator" && (
-                              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">CAPTCHA</span>
-                            )}
-                            {job.status === "waiting_for_operator" && job.phase !== "WAITING_FOR_OTP" && job.phase !== "CAPTCHA_REQUIRED" && (
-                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full">Action Needed</span>
-                            )}
-                            <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* All completed runs at bottom */}
-                {jobs.filter(j => j.status === "completed").length > 0 && (
-                  <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
-                    <div className="px-5 py-3 border-b border-slate-100">
-                      <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider">Recently Completed</h3>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {jobs.filter(j => j.status === "completed").slice(0, 5).map((job) => (
-                        <div key={job.jobId} onClick={() => setSelectedJobId(job.jobId)}
-                          className="px-5 py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 shrink-0" />
-                            <div>
-                              <p className="text-xs font-bold text-slate-700">#{job.jobId.slice(0, 8)}</p>
-                              <p className="text-[10px] text-slate-400 font-medium">{job.maskedPan}</p>
-                            </div>
-                          </div>
-                          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">DONE</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Right: Run Details Console */}
-              <div className="min-w-0 w-full space-y-4 xl:sticky xl:top-6">
-                <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Live Events</p>
-                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                        SSE stream for CAPTCHA, OTP, and password updates
-                      </p>
-                    </div>
-                    <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${
-                      streamState === "connected"
-                        ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-                        : streamState === "connecting"
-                        ? "text-blue-700 bg-blue-50 border-blue-200"
-                        : streamState === "disconnected"
-                        ? "text-amber-700 bg-amber-50 border-amber-200"
-                        : streamState === "error"
-                        ? "text-red-700 bg-red-50 border-red-200"
-                        : "text-slate-500 bg-slate-50 border-slate-200"
-                    }`}>
-                      {streamState === "connected"
-                        ? "Connected"
-                        : streamState === "connecting"
-                        ? "Connecting"
-                        : streamState === "disconnected"
-                        ? "Reconnecting"
-                        : streamState === "error"
-                        ? "Error"
-                        : "SSE ready"}
-                    </span>
-                  </div>
-                  <LiveEventConsole
-                    events={events}
-                    autoScroll={autoScroll}
-                    isLive={Boolean(selectedJob && (selectedJob.status === "running" || selectedJob.status === "waiting_for_operator"))}
-                    streamState={streamState}
-                    heightClass="h-[420px]"
-                    className="rounded-none border-0 shadow-none"
-                    onAutoScrollChange={setAutoScroll}
-                  />
-                </div>
-
-                <RunDetails
-                  job={selectedJob} events={events} otp={otp} error={error}
-                  autoScroll={autoScroll}
-                  streamState={streamState}
-                  onOtpChange={setOtp}
-                  onSubmitOtp={handleSubmitOtp}
-                  onContinueCaptcha={handleContinueCaptcha}
-                  continueBusy={continueBusy}
-                  onCancel={handleCancelRun}
-                  onAutoScrollChange={setAutoScroll}
-                  showEventConsole={false}
-                />
-              </div>
             </div>
           )}
 
