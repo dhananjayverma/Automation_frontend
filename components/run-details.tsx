@@ -123,9 +123,10 @@ export function RunDetails({
         ? "OTP should arrive on your registered mobile/email. Enter it here — bot will fill the portal form."
         : "Enter the 6-digit OTP here. Do not type OTP in the Playwright browser window.";
   const showOperatorGuide = isRunning && (needsManualBrowserAction || isWaitingOtp);
+  const splitConsoleLayout = showEventConsole;
 
-  return (
-    <div className="space-y-4">
+  const detailContent = (
+    <>
       {/* Header */}
       <div className="bg-white border border-slate-100 rounded-xl shadow-sm p-4 flex items-center justify-between">
         <div>
@@ -344,15 +345,26 @@ export function RunDetails({
           <p className="text-[11px] text-red-700 font-medium">{job.error.message}</p>
         </div>
       )}
+    </>
+  );
+
+  return (
+    <div className={`w-full ${splitConsoleLayout ? "grid gap-4 xl:grid-cols-[minmax(320px,0.76fr)_minmax(0,1.24fr)]" : "space-y-4"}`}>
+      <div className="space-y-4 min-w-0">
+        {detailContent}
+      </div>
 
       {showEventConsole && (
-        <LiveEventConsole
-          events={events}
-          autoScroll={autoScroll}
-          isLive={isRunning}
-          streamState={streamState}
-          onAutoScrollChange={onAutoScrollChange}
-        />
+        <div className="min-w-0 w-full">
+          <LiveEventConsole
+            events={events}
+            autoScroll={autoScroll}
+            isLive={isRunning}
+            streamState={streamState}
+            heightClass="h-[540px]"
+            onAutoScrollChange={onAutoScrollChange}
+          />
+        </div>
       )}
     </div>
   );

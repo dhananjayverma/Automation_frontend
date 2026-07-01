@@ -16,6 +16,8 @@ export function JobsTable({
   onSelect,
   onDelete,
   loading = false,
+  compact = false,
+  elevated = false,
 }: {
   jobs: Job[];
   total?: number;
@@ -30,19 +32,29 @@ export function JobsTable({
   onSelect: (jobId: string) => void;
   onDelete: (job: Job) => void;
   loading?: boolean;
+  compact?: boolean;
+  elevated?: boolean;
 }) {
   const realTotal = total ?? jobs.length;
+  const shellPadding = compact ? "p-3.5" : "p-5";
+  const headerGap = compact ? "gap-3" : "gap-4";
+  const bodyPaddingX = compact ? "px-4" : "px-6";
+  const bodyPaddingY = compact ? "py-3" : "py-4";
   return (
-    <div className="rounded-xl border border-slate-100 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.02),0_4px_12px_0_rgba(0,0,0,0.01)] overflow-hidden transition-all duration-300">
+    <div className={`h-full rounded-2xl border overflow-hidden transition-all duration-300 ${
+      elevated
+        ? "border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50 shadow-[0_8px_26px_-12px_rgba(15,23,42,0.16)]"
+        : "border-slate-100 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.02),0_4px_12px_0_rgba(0,0,0,0.01)]"
+    }`}>
       {/* Table Header and Filters */}
-      <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between bg-white">
+      <div className={`flex flex-col ${headerGap} border-b border-slate-100/80 ${shellPadding} sm:flex-row sm:items-center sm:justify-between bg-white/85 backdrop-blur-sm`}>
         <div>
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">All Runs</h2>
+          <h2 className={`font-bold text-slate-800 uppercase tracking-wider ${compact ? "text-xs" : "text-sm"}`}>All Runs</h2>
           {loading && <p className="text-[11px] font-semibold text-orange-500 mt-1">Refreshing runs...</p>}
         </div>
         
         {/* Filters Panel matching mockup */}
-        <div className="flex items-center gap-2">
+        <div className={`flex items-center ${compact ? "gap-1.5" : "gap-2"}`}>
           {/* Search box */}
           <div className="relative">
             <input
@@ -50,7 +62,7 @@ export function JobsTable({
               onChange={(event) => onSearchChange(event.target.value)}
               onBlur={onRefresh}
               placeholder="Search PAN..."
-              className="h-8.5 rounded-lg border border-slate-200 bg-white pl-3 pr-7 text-xs text-slate-600 outline-none focus:border-[#f97316] focus:ring-4 focus:ring-orange-500/5 transition-all placeholder-slate-400 font-medium"
+              className={`rounded-lg border border-slate-200 bg-white pl-3 text-xs text-slate-600 outline-none focus:border-[#f97316] focus:ring-4 focus:ring-orange-500/5 transition-all placeholder-slate-400 font-medium ${compact ? "h-8 pr-6" : "h-8.5 pr-7"}`}
             />
             {search && (
               <button 
@@ -62,7 +74,7 @@ export function JobsTable({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white cursor-pointer select-none hover:border-slate-350 transition-colors">
+          <div className={`flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white cursor-pointer select-none hover:border-slate-350 transition-colors ${compact ? "px-2 py-1.25" : "px-2.5 py-1.5"}`}>
             <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
@@ -80,7 +92,7 @@ export function JobsTable({
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white cursor-pointer select-none hover:border-slate-350 transition-colors">
+          <div className={`flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white cursor-pointer select-none hover:border-slate-350 transition-colors ${compact ? "px-2 py-1.25" : "px-2.5 py-1.5"}`}>
             <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -102,7 +114,7 @@ export function JobsTable({
             type="button"
             onClick={onRefresh}
             disabled={loading}
-            className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:border-[#f97316] hover:text-[#f97316] disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            className={`rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:border-[#f97316] hover:text-[#f97316] disabled:opacity-60 disabled:cursor-not-allowed transition-colors ${compact ? "h-7" : "h-8"}`}
             title="Refresh runs"
           >
             {loading ? "Refreshing" : "Refresh"}
@@ -115,13 +127,13 @@ export function JobsTable({
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              <th className="px-6 py-3.5 font-bold">Job ID</th>
-              <th className="px-6 py-3.5 font-bold">PAN</th>
-              <th className="px-6 py-3.5 font-bold">Current Phase</th>
-              <th className="px-6 py-3.5 font-bold">Status</th>
-              <th className="px-6 py-3.5 font-bold">Started At</th>
-              <th className="px-6 py-3.5 font-bold">Duration</th>
-              <th className="px-6 py-3.5 font-bold">Action</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>Job ID</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>PAN</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>Current Phase</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>Status</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>Started At</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>Duration</th>
+              <th className={`${bodyPaddingX} py-3.5 font-bold`}>Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -155,7 +167,7 @@ export function JobsTable({
                       : "hover:bg-slate-50/40"
                   }`}
                 >
-                  <td className="px-6 py-4 font-semibold text-slate-500">
+                  <td className={`${bodyPaddingX} ${bodyPaddingY} font-semibold text-slate-500`}>
                     <div className="flex items-center gap-2">
                       {isSelected ? (
                         <span className="h-2 w-2 rounded-full bg-[#f97316] shadow-[0_0_8px_#f97316] animate-pulse shrink-0" />
@@ -165,18 +177,18 @@ export function JobsTable({
                       #{job.jobId.slice(0, 8)}
                     </div>
                   </td>
-                  <td className="px-6 py-4 font-bold text-slate-800 tracking-wide">{job.maskedPan}</td>
-                  <td className="px-6 py-4">
+                  <td className={`${bodyPaddingX} ${bodyPaddingY} font-bold text-slate-800 tracking-wide`}>{job.maskedPan}</td>
+                  <td className={`${bodyPaddingX} ${bodyPaddingY}`}>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${phaseBadgeClass}`}>
                       {phase}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className={`${bodyPaddingX} ${bodyPaddingY}`}>
                     <StatusBadge status={job.status} />
                   </td>
-                  <td className="px-6 py-4 text-slate-500 font-semibold">{formatStartedAt(job.startedAt)}</td>
-                  <td className="px-6 py-4 font-bold text-slate-700">{formatDurationMMSS(job.durationMs)}</td>
-                  <td className="px-6 py-4">
+                  <td className={`${bodyPaddingX} ${bodyPaddingY} text-slate-500 font-semibold`}>{formatStartedAt(job.startedAt)}</td>
+                  <td className={`${bodyPaddingX} ${bodyPaddingY} font-bold text-slate-700`}>{formatDurationMMSS(job.durationMs)}</td>
+                  <td className={`${bodyPaddingX} ${bodyPaddingY}`}>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={(e) => {
@@ -205,7 +217,7 @@ export function JobsTable({
             })}
             {jobs.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-6 py-16 text-center text-slate-400">
+                <td colSpan={7} className={`${bodyPaddingX} ${compact ? "py-6" : "py-16"} text-center text-slate-400`}>
                   <div className="flex flex-col items-center justify-center gap-2">
                     <svg className="w-10 h-10 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />

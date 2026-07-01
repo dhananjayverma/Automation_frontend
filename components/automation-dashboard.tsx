@@ -168,12 +168,12 @@ export function AutomationDashboard() {
   useEffect(() => {
     if (!activeJobId) {
       lastSeqRef.current = 0;
-      setStreamState("idle");
-      return;
+      const idleTimer = window.setTimeout(() => setStreamState("idle"), 0);
+      return () => { window.clearTimeout(idleTimer); };
     }
     let closed = false;
     let cleanup: (() => void) | undefined;
-    setStreamState("connecting");
+    const connectingTimer = window.setTimeout(() => setStreamState("connecting"), 0);
 
     async function connectStream() {
       const history = await getJobEvents(activeJobId);
@@ -242,6 +242,7 @@ export function AutomationDashboard() {
       }
     });
     return () => {
+      window.clearTimeout(connectingTimer);
       closed = true;
       cleanup?.();
     };
@@ -360,7 +361,7 @@ export function AutomationDashboard() {
   const metricsTrend = metricsLoading ? "Loading..." : "Unavailable";
 
   return (
-    <div className="min-h-screen flex bg-slate-50/60 bg-[radial-gradient(#e2e8f0_1px,transparent_1px)] [background-size:20px_20px] text-[#172033] font-sans antialiased">
+    <div className="min-h-screen flex bg-[radial-gradient(circle_at_top_left,_#f7fbff_0%,_#f4f7fb_34%,_#edf2f7_100%)] text-[#172033] font-sans antialiased">
       <div className="fixed right-4 top-4 z-50 space-y-2 w-[min(360px,calc(100vw-2rem))]">
         {toasts.map((toast) => (
           <div
@@ -488,7 +489,7 @@ export function AutomationDashboard() {
         </header>
 
         {/* ── PAGE CONTENT ── */}
-        <div className="flex-1 overflow-y-auto p-7">
+        <div className="flex-1 overflow-y-auto p-5">
 
           {/* Global Error */}
           {error && (
@@ -501,9 +502,9 @@ export function AutomationDashboard() {
 
           {/* ══════════════ DASHBOARD TAB ══════════════ */}
           {activeTab === "dashboard" && (
-            <div className="space-y-6">
+            <div className="space-y-3">
               {/* Metrics Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 <MetricCard label="Total Runs" value={metrics?.total ?? 0} trendText={metrics ? `${metrics.total} runs total` : metricsTrend} trendColor="purple" tone="orange" />
                 <MetricCard label="Success Rate" value={metrics ? `${(metrics.successRate * 100).toFixed(1)}%` : "—"} trendText={metrics ? `${metrics.completed} completed` : metricsTrend} trendColor="green" tone="green" />
                 <MetricCard label="Failed Runs" value={metrics?.failed ?? 0} trendText={metrics ? `${metrics.cancelled} cancelled` : metricsTrend} trendColor="red" tone="red" />
@@ -511,41 +512,49 @@ export function AutomationDashboard() {
                 <MetricCard label="Active Runs" value={(metrics?.running ?? 0) + (metrics?.waiting ?? 0)} trendText={metrics ? `${metrics.running} running · ${metrics.waiting} waiting` : metricsTrend} trendColor="purple" tone="purple" />
               </div>
 
-              {/* Start New Run */}
-              <div className="bg-gradient-to-r from-orange-50/70 via-white to-orange-50/10 border border-orange-100/70 rounded-2xl p-6 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.03)]">
-                <h3 className="text-xs font-bold text-orange-850 uppercase tracking-wider">Start New Run</h3>
-                <p className="text-[11px] text-orange-650/80 font-semibold mt-1">Enter PAN to start the real portal identity, CAPTCHA, OTP, password flow.</p>
-                <form onSubmit={handleCreateRun} className="space-y-4 mt-4">
-                  <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2.5">
-                    <input
-                      value={pan}
-                      onChange={(e) => {
-                        const nextPan = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
-                        setPan(nextPan);
-                        setPanError(nextPan && !PAN_REGEX.test(nextPan)
-                          ? "Format: 5 letters, 4 digits, 1 letter"
-                          : "");
-                      }}
-                      placeholder="Enter PAN (e.g. ABCDE1234F)"
-                      maxLength={10}
-                      className="h-10 rounded-lg border border-slate-200 bg-white px-3.5 text-sm outline-none focus:border-[#f97316] focus:ring-4 focus:ring-orange-500/5 transition-all font-semibold tracking-wider text-slate-700 placeholder-slate-400"
-                    />
-                    <button type="submit" className="h-10 bg-[#f97316] text-white text-xs font-bold px-5 rounded-lg flex items-center gap-1.5 hover:bg-[#ea580c] transition-all duration-200 active:scale-95 cursor-pointer shadow-md shadow-orange-100 shrink-0">
-                      Start Run
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-                    </button>
+              {/* Top Row: Start + Runs */}
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)] gap-3 items-start">
+                <div className="rounded-2xl border border-orange-100/70 bg-gradient-to-br from-orange-50/90 via-white to-orange-50/30 p-4 shadow-[0_4px_20px_-2px_rgba(249,115,22,0.03)]">
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-[#f97316]" />
+                        <h3 className="text-xs font-black text-orange-850 uppercase tracking-[0.18em]">Start New Run</h3>
+                      </div>
+                      <p className="text-[11px] text-orange-650/80 font-semibold leading-relaxed max-w-md">
+                        Enter PAN to start the real portal identity, CAPTCHA, OTP, password flow.
+                      </p>
+                    </div>
+                    <form onSubmit={handleCreateRun} className="space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_120px] gap-2 items-center">
+                        <input
+                          value={pan}
+                          onChange={(e) => {
+                            const nextPan = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+                            setPan(nextPan);
+                            setPanError(nextPan && !PAN_REGEX.test(nextPan)
+                              ? "Format: 5 letters, 4 digits, 1 letter"
+                              : "");
+                          }}
+                          placeholder="Enter PAN (e.g. ABCDE1234F)"
+                          maxLength={10}
+                          className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3.5 text-sm outline-none focus:border-[#f97316] focus:ring-4 focus:ring-orange-500/5 transition-all font-semibold tracking-wider text-slate-700 placeholder-slate-400"
+                        />
+                        <button type="submit" className="h-10 w-full md:w-auto justify-center bg-[#f97316] text-white text-xs font-bold px-3 rounded-lg flex items-center gap-1.5 hover:bg-[#ea580c] transition-all duration-200 active:scale-95 cursor-pointer shadow-md shadow-orange-100 shrink-0">
+                          Start Run
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                      </div>
+                      {panError && (
+                        <p className="text-[11px] font-bold text-red-600">{panError}</p>
+                      )}
+                    </form>
                   </div>
-                  {panError && (
-                    <p className="text-[11px] font-bold text-red-600">{panError}</p>
-                  )}
-                </form>
-              </div>
+                </div>
 
-              {/* Main Grid: Table + Console */}
-              <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-6 items-start">
                 <div className="min-w-0">
                   <JobsTable
-                    jobs={jobs.slice(0, 8)}
+                    jobs={jobs.slice(0, 1)}
                     total={totalJobs}
                     selectedJobId={selectedJob?.jobId}
                     search={search} phaseFilter={phaseFilter} statusFilter={statusFilter}
@@ -554,8 +563,14 @@ export function AutomationDashboard() {
                     loading={jobsLoading}
                     onSelect={(id) => { setSelectedJobId(id); setActiveTab("live"); }}
                     onDelete={handleDeleteRun}
+                    compact
+                    elevated
                   />
                 </div>
+              </div>
+
+              {/* Bottom Row: Progress + Live Events */}
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-3 items-start">
                 <div className="min-w-0 xl:sticky xl:top-6 self-start">
                   <RunDetails
                     job={selectedJob} events={events} otp={otp} error={error}
@@ -566,7 +581,50 @@ export function AutomationDashboard() {
                     continueBusy={continueBusy}
                     onCancel={handleCancelRun}
                     onAutoScrollChange={setAutoScroll}
+                    showEventConsole={false}
                   />
+                </div>
+                <div className="min-w-0 w-full xl:sticky xl:top-6 self-start">
+                  <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Live Events</p>
+                        <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                          SSE stream for CAPTCHA, OTP, and password updates
+                        </p>
+                      </div>
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                        streamState === "connected"
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                          : streamState === "connecting"
+                          ? "text-blue-700 bg-blue-50 border-blue-200"
+                          : streamState === "disconnected"
+                          ? "text-amber-700 bg-amber-50 border-amber-200"
+                          : streamState === "error"
+                          ? "text-red-700 bg-red-50 border-red-200"
+                          : "text-slate-500 bg-slate-50 border-slate-200"
+                      }`}>
+                        {streamState === "connected"
+                          ? "Connected"
+                          : streamState === "connecting"
+                          ? "Connecting"
+                          : streamState === "disconnected"
+                          ? "Reconnecting"
+                          : streamState === "error"
+                          ? "Error"
+                          : "SSE ready"}
+                      </span>
+                    </div>
+                    <LiveEventConsole
+                      events={events}
+                      autoScroll={autoScroll}
+                      isLive={Boolean(selectedJob && (selectedJob.status === "running" || selectedJob.status === "waiting_for_operator"))}
+                      streamState={streamState}
+                      heightClass="h-[420px]"
+                      className="rounded-none border-0 shadow-none"
+                      onAutoScrollChange={setAutoScroll}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -591,7 +649,7 @@ export function AutomationDashboard() {
 
           {/* ══════════════ LIVE RUNS TAB ══════════════ */}
           {activeTab === "live" && (
-            <div className="grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr] gap-6 items-start">
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(340px,0.82fr)_minmax(0,1.18fr)] gap-6 items-start">
               {/* Left: active jobs list + event stream */}
               <div className="space-y-4">
                 <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
@@ -670,7 +728,7 @@ export function AutomationDashboard() {
               </div>
 
               {/* Right: Run Details Console */}
-              <div className="min-w-0 space-y-4 xl:sticky xl:top-6">
+              <div className="min-w-0 w-full space-y-4 xl:sticky xl:top-6">
                 <div className="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden">
                   <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                     <div>
